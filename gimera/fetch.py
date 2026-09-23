@@ -94,8 +94,8 @@ def _fetch_branch(repo, repo_yml, no_fetch=False, filter_remote=None, **options)
         return
     with assert_exception_no_exit():
         for remote in repo.remotes:
+            url = remote.url
             try:
-                url = remote.url
                 _set_url_and_fetch(
                     repo, repo_yml, remote.name, url, filter_remote=filter_remote
                 )
@@ -117,9 +117,22 @@ def _fetch_branch(repo, repo_yml, no_fetch=False, filter_remote=None, **options)
                             )
                             break
                         except Exception:
+                            # Put the original url back. Otherwise the remote
+                            # keeps pointing to the fallback, and every later
+                            # plain fetch (e.g. _ensure_sha) fails on it -
+                            # for private repos an https url never works.
+                            _restore_remote_url(repo, remote.name, url)
                             raise fetch_exception
                 else:
                     raise fetch_exception
+
+
+def _restore_remote_url(repo, remote_name, url):
+    try:
+        repo.set_remote_url(remote_name, url)
+    except Exception as ex:
+        # the last-resort path in _set_url_and_fetch may have removed the repo
+        verbose(f"Could not restore url of {remote_name} in {repo.path}: {ex}")
 
 
 def _set_url_and_fetch(

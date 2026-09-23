@@ -165,12 +165,35 @@ def _clone_or_restore(main_repo, url, golden_path, possible_temp_path, partial=F
             _bare_clone(main_repo, url, _path, partial)
 
 
+def _sync_origin_url(repo, url):
+    """Point origin of a cache repo back to the url from gimera.yml.
+
+    The cache is keyed by the normalized url, so git@ and https forms of the
+    same repo share one directory. A failed fetch fallback, or a project that
+    uses the other form, can leave origin at an url that does not work here
+    (https for a private repo). gimera.yml is the source of truth.
+    """
+    if not url:
+        return
+    current = repo.X(
+        *(git + ["remote", "get-url", "origin"]), output=True, allow_error=True
+    )
+    current = (current or "").strip()
+    if current and current != url:
+        click.secho(
+            f"Cache {repo.path}: origin was {current}, resetting to {url}",
+            fg="yellow",
+        )
+        repo.set_remote_url("origin", url)
+
+
 def _ensure_sha(repo_yml, effective_path, update):
     if not repo_yml.sha:
         return
     repo = Repo(effective_path)
     if repo.contain_commit(repo_yml.sha):
         return
+    _sync_origin_url(repo, repo_yml.url)
     # fetch configured branch first (faster than fetchall for large repos;
     # bare cache repos may have no refspec so --all only fetches HEAD)
     if repo_yml.branch:
